@@ -218,3 +218,33 @@ birthweight |>
 ```
 
 The plot shows that the fitted values show slightly unstable predictions when the birthweight is too small. Most residuals shows random pattern around 0.
+
+Now we use cross validation to evluate our model and other two models.
+```{r}
+cv_df = crossv_mc(birthweight, 10) |>
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble))|>
+  mutate(
+    our_model =  map(train, \(df) lm(bwt ~ babysex + bhead + blength + gaweeks + delwt + momage + ppbmi + smoken, data = birthweight)),
+    sample_model_one = map(train, \(df) lm(bwt ~ blength + gaweeks, data = birthweight)),
+    sample_model_two = map(train, \(df) lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data = birthweight))) |>
+  mutate(
+    rmse_our_model = map2_dbl(our_model, test, \(mod, df) rmse(model = mod, data = df)),
+    rmse_sample_model_one = map2_dbl(sample_model_one, test, \(mod, df) rmse(model = mod, data = df)),
+    rmse_sample_model_two = map2_dbl(sample_model_two, test, \(mod, df) rmse(model = mod, data = df)))
+```
+
+```{r}
+cv_df |> 
+  select(starts_with("rmse")) |> 
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") |> 
+  mutate(model = fct_inorder(model)) |> 
+  ggplot(aes(x = model, y = rmse)) + geom_violin() +
+  stat_summary(fun = "mean", color = "black")
+```
+From the plot, it is obvious that in general, our model shows lower rmse than two sample models, and our model also shows the lowest mean of rmse.
