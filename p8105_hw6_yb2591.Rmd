@@ -157,7 +157,7 @@ boot_straps |>
 
 The bootstrap estimated r square gives the range `r round(range(pull(boot_straps, r_squared)), 3)`, mean `r round(mean(pull(boot_straps, r_squared)), 3)`, and the plot shows that most estimated values are around 0.92, which shows that the model has a good fit of the data.
 
-The plot of $log(\hat{\beta_1}*\hat{\beta_2})$ shows an obvious left skewing, with the range `r round(range(pull(boot_straps, log_b1b2)), 3)`, and most of the values were around -5.5. We noticed that there are na in the value of $log(\hat{\beta_1}*\hat{\beta_2})$ due to the negative result of the product of $\hat{\beta_1}$ and $\hat{\beta_2}$.
+The plot of $log(\hat{\beta}_1*\hat{\beta}_2)$ shows an obvious left skewing, with the range `r round(range(pull(boot_straps, log_b1b2)), 3)`, and most of the values were around -5.5. We noticed that there are na in the value of $log(\hat{\beta}_1*\hat{\beta}_2)$ due to the negative result of the product of $\hat{\beta}_1$ and $\hat{\beta}_2$.
 
 ## 95% confidence interval
 ```{r}
