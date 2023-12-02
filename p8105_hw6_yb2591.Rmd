@@ -158,3 +158,63 @@ ci_rsquared
 ci_logb1b2
 ```
 The 95% CI for $\hat{r}^2$ is (0.89, 0.94), and 95% CI for $log(\hat{\beta}_1*\hat{\beta}_2)$ is [-9.06, -4.54]
+
+# Problem 3
+Firstly, we load and clean the data. All variables are converted to appropriate type and there is no missing value through checking.
+```{r}
+birthweight = read_csv("./birthweight.csv") |>
+  mutate(
+    babysex = case_match(babysex,
+      1 ~ "male",
+      2 ~ "female"
+    ),
+    frace = case_match(frace,
+      1 ~ "White",
+      2 ~ "Black",
+      3 ~ "Asian",
+      4 ~ "Puerto Rican",
+      8 ~ "Other",
+      9 ~ "Unknown"
+    ),
+    malform = case_match(malform,
+      0 ~ "absent",
+      1 ~ "present"
+    ),
+    mrace = case_match(mrace,
+      1 ~ "White",
+      2 ~ "Black",
+      3 ~ "Asian",
+      4 ~ "Puerto Rican",
+      8 ~ "Other"))
+```
+```{r}
+skimr::skim(birthweight)
+```
+
+Firstly, we supposed that the birthweight is associated with babay's health status and characteristics (babysex, bhead, blength, gaweeks, malform), mom's health status and characteristics (delwt, momage, ppmbi, smoken, wtgain), financial status (fincome)
+```{r}
+model_one = lm(bwt ~ babysex + bhead + blength + gaweeks + delwt + malform + momage + ppbmi + smoken + wtgain, data = birthweight)
+
+model_one |>summary()
+```
+After fitting the first model, we observed that malform and wtgain is not statistical significant for the model, so we delete these two variables and fit a new model.
+
+```{r}
+model_two = lm(bwt ~ babysex + bhead + blength + gaweeks + delwt + momage + ppbmi + smoken, data = birthweight)
+
+model_two |>summary()
+```
+Now, all variables are significantly associated with birthweight and we use this as our final model.
+```{r}
+birthweight |>
+  add_residuals(model_two) |>
+  add_predictions(model_two) |>
+  arrange(pred) |>
+  ggplot(
+    aes(x = pred ,y = resid)
+  )+
+  geom_point()+
+  labs(title = "Residuals vs Predictions", x = "Predictions", y = "Residuals")
+```
+
+The plot shows that the fitted values show slightly unstable predictions when the birthweight is too small. Most residuals shows random pattern around 0.
