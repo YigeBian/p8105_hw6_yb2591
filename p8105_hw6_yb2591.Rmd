@@ -1,0 +1,160 @@
+---
+title: "p8105_hw6_yb2591"
+author: "Yige Bian (yb2591)"
+date: "2023-12-01"
+output: github_document
+---
+
+```{r setup, include = FALSE}
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(viridis)
+library(modelr)
+library(purrr)
+
+knitr::opts_chunk$set(
+	echo = TRUE,
+	warning = FALSE,
+	fig.width = 8, 
+  fig.height = 6,
+  out.width = "90%"
+)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+# Problem 1
+In the following data, we create `city_state` variable, `if_solved` varaible to indicate whether the homicide is solved, omit cities "Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL",  limit `victim_race` with white or black, convert `victim_age` to numeric.
+```{r}
+homicide_data = read_csv("./homicide-data.csv") |>
+  mutate(city_state = paste(city, state, sep = ", "),
+         victim_age = as.numeric(victim_age),
+         resolution = case_when(
+      disposition == "Closed without arrest" ~ 0,
+      disposition == "Open/No arrest"        ~ 0,
+      disposition == "Closed by arrest"      ~ 1)) |>
+  filter(!(city_state %in% c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL")) & (victim_race %in% c("White", "Black")))
+```
+```{r}
+baltimore_df = homicide_data |>
+  filter(city_state == "Baltimore, MD") |>
+  select(resolution, victim_age, victim_sex, victim_race)
+
+p1_fit_bal = glm(resolution ~ victim_age + victim_sex + victim_race, data = baltimore_df, family = binomial())
+
+p1_fit_bal |>
+  broom::tidy()|> 
+  mutate(
+    OR = exp(estimate), 
+    OR_CI_upper = exp(estimate + 1.96 * std.error),
+    OR_CI_lower = exp(estimate - 1.96 * std.error)) |> 
+  filter(term == c("victim_sexMale")) |> 
+  select(term, OR, OR_CI_lower, OR_CI_upper) |>
+  knitr::kable(digits = 3)
+```
+```{r}
+p1_cities_model = homicide_data |>
+  nest(data = -city_state) |> 
+  mutate(
+    models = map(data, \(df) glm(resolution ~ victim_age + victim_sex + victim_race, 
+                             family = binomial(), data = df)),
+    tidy_models = map(models, broom::tidy)) |> 
+  select(-models, -data) |>
+  unnest(cols = tidy_models) |> 
+  mutate(
+    OR = exp(estimate), 
+    OR_CI_upper = exp(estimate + 1.96 * std.error),
+    OR_CI_lower = exp(estimate - 1.96 * std.error)) |> 
+  filter(term == "victim_sexMale") |> 
+  select(term, city_state, OR, OR_CI_lower, OR_CI_upper)
+
+p1_cities_model |> 
+  mutate(city_state = fct_reorder(city_state, OR)) |> 
+  ggplot(aes(x = city_state, y = OR)) + 
+  geom_point() + 
+  geom_errorbar(aes(ymin = OR_CI_lower, ymax = OR_CI_upper)) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+# Problem 2
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2022-01-01",
+    date_max = "2022-12-31") |>
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) |>
+  select(name, id, everything())
+```
+```{r}
+boot_sample = function(df) {
+  sample_frac(df, replace = TRUE)
+}
+
+cal_quantities = function(df){
+  fit = lm(tmax ~ tmin + prcp, data = df)
+  
+  r_sq = pull(broom::glance(fit), r.squared)
+  log_b1b2 = fit |>
+    broom::tidy() |>
+    filter(!(term %in% "(Intercept)")) |>
+    pull(estimate) |>
+    prod() |>
+    log()
+  
+  return(tibble(
+    r_squared = r_sq,
+    log_b1b2 = log_b1b2))
+}
+
+boot_straps = 
+  tibble(strap_number = 1:5000) |>
+  mutate(
+    strap_sample = map(strap_number, \(i) boot_sample(df = weather_df))
+  ) |>
+  mutate(quantities = map(strap_sample, cal_quantities)) |>
+    unnest(quantities)
+```
+
+```{r}
+boot_straps |>
+  ggplot(aes(x = r_squared)) + 
+  geom_density() +
+  labs(x = "R-squared", y = "Frequency") +
+  ggtitle("Distribution of R-Squared")
+```
+
+```{r}
+boot_straps |>
+  drop_na(log_b1b2) |>
+  ggplot(aes(x = log_b1b2)) + 
+  geom_density() +
+  labs(x = "R-squared", y = "Frequency") +
+  ggtitle("Distribution of Estimated log(β1*β2)")
+```
+
+The bootstrap estimated r square gives the range `r round(range(pull(boot_straps, r_squared)), 3)`, mean `r `round(mean(pull(boot_straps, r_squared)), 3)`, and the plot shows that most estimated values are around 0.92, which shows that the model has a good fit of the data.
+
+The plot of $log(\hat{\beta}_1*\hat{\beta}_2)$ shows an obvious left skewing, with the range `r round(range(pull(boot_straps, log_b1b2)), 3)`, and most of the values were around -5.5. We noticed that there are na in the value of $log(\hat{\beta}_1*\hat{\beta}_2)$ due to the negative result of the product of $\hat{\beta}_1$ and $\hat{\beta}_2$.
+
+```{r}
+ci_rsquared <- quantile(pull(boot_straps, r_squared), c(0.025, 0.975))
+ci_logb1b2 <- quantile(pull(boot_straps, log_b1b2), c(0.025, 0.975), na.rm = TRUE)
+
+ci_rsquared
+ci_logb1b2
+```
+The 95% CI for $\hat{r}^2$ is (0.89, 0.94), and 95% CI for $log(\hat{\beta}_1*\hat{\beta}_2)$ is [-9.06, -4.54]
