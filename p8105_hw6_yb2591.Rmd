@@ -20,21 +20,13 @@ knitr::opts_chunk$set(
   fig.height = 6,
   out.width = "90%"
 )
-
-theme_set(theme_minimal() + theme(legend.position = "bottom"))
-
-options(
-  ggplot2.continuous.colour = "viridis",
-  ggplot2.continuous.fill = "viridis"
-)
-
-scale_colour_discrete = scale_colour_viridis_d
-scale_fill_discrete = scale_fill_viridis_d
 ```
 
 # Problem 1
+## Data cleaning
 In the following data, we create `city_state` variable, `if_solved` varaible to indicate whether the homicide is solved, omit cities "Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL",  limit `victim_race` with white or black, convert `victim_age` to numeric.
 ```{r}
+# data import and cleaning
 homicide_data = read_csv("./homicide-data.csv") |>
   mutate(city_state = paste(city, state, sep = ", "),
          victim_age = as.numeric(victim_age),
@@ -44,13 +36,15 @@ homicide_data = read_csv("./homicide-data.csv") |>
       disposition == "Closed by arrest"      ~ 1)) |>
   filter(!(city_state %in% c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL")) & (victim_race %in% c("White", "Black")))
 ```
+## Model for Baltimore
 ```{r}
+# further tidy the df
 baltimore_df = homicide_data |>
   filter(city_state == "Baltimore, MD") |>
   select(resolution, victim_age, victim_sex, victim_race)
-
+# develop model
 p1_fit_bal = glm(resolution ~ victim_age + victim_sex + victim_race, data = baltimore_df, family = binomial())
-
+# obtain OR and CI
 p1_fit_bal |>
   broom::tidy()|> 
   mutate(
@@ -61,7 +55,10 @@ p1_fit_bal |>
   select(term, OR, OR_CI_lower, OR_CI_upper) |>
   knitr::kable(digits = 3)
 ```
+
+## Model for all cities
 ```{r}
+# develop model for all cities, calculate OR and CI
 p1_cities_model = homicide_data |>
   nest(data = -city_state) |> 
   mutate(
@@ -76,7 +73,10 @@ p1_cities_model = homicide_data |>
     OR_CI_lower = exp(estimate - 1.96 * std.error)) |> 
   filter(term == "victim_sexMale") |> 
   select(term, city_state, OR, OR_CI_lower, OR_CI_upper)
+```
 
+The following plot shows the estimated ORs and CIs for each city
+```{r}
 p1_cities_model |> 
   mutate(city_state = fct_reorder(city_state, OR)) |> 
   ggplot(aes(x = city_state, y = OR)) + 
@@ -86,7 +86,9 @@ p1_cities_model |>
 ```
 
 # Problem 2
+## Data import
 ```{r}
+# import df
 weather_df = 
   rnoaa::meteo_pull_monitors(
     c("USW00094728"),
@@ -99,11 +101,15 @@ weather_df =
     tmax = tmax / 10) |>
   select(name, id, everything())
 ```
+
+## Bootstrape and calculate quantities
 ```{r}
+# define function for boot sample
 boot_sample = function(df) {
   sample_frac(df, replace = TRUE)
 }
 
+# define function to calculate quantities
 cal_quantities = function(df){
   fit = lm(tmax ~ tmin + prcp, data = df)
   
@@ -119,7 +125,7 @@ cal_quantities = function(df){
     r_squared = r_sq,
     log_b1b2 = log_b1b2))
 }
-
+# implement bootsrap
 boot_straps = 
   tibble(strap_number = 1:5000) |>
   mutate(
@@ -129,7 +135,9 @@ boot_straps =
     unnest(quantities)
 ```
 
+## Plot quantities
 ```{r}
+# plot R-squared
 boot_straps |>
   ggplot(aes(x = r_squared)) + 
   geom_density() +
@@ -138,19 +146,22 @@ boot_straps |>
 ```
 
 ```{r}
+# plot log()
 boot_straps |>
   drop_na(log_b1b2) |>
   ggplot(aes(x = log_b1b2)) + 
   geom_density() +
-  labs(x = "R-squared", y = "Frequency") +
-  ggtitle("Distribution of Estimated log(β1*β2)")
+  labs(x = "Log(Beta1*Beta2)", y = "Frequency") +
+  ggtitle("Distribution of Estimated Log(Beta1*Beta2)")
 ```
 
-The bootstrap estimated r square gives the range `r round(range(pull(boot_straps, r_squared)), 3)`, mean `r `round(mean(pull(boot_straps, r_squared)), 3)`, and the plot shows that most estimated values are around 0.92, which shows that the model has a good fit of the data.
+The bootstrap estimated r square gives the range `r round(range(pull(boot_straps, r_squared)), 3)`, mean `r round(mean(pull(boot_straps, r_squared)), 3)`, and the plot shows that most estimated values are around 0.92, which shows that the model has a good fit of the data.
 
-The plot of $log(\hat{\beta}_1*\hat{\beta}_2)$ shows an obvious left skewing, with the range `r round(range(pull(boot_straps, log_b1b2)), 3)`, and most of the values were around -5.5. We noticed that there are na in the value of $log(\hat{\beta}_1*\hat{\beta}_2)$ due to the negative result of the product of $\hat{\beta}_1$ and $\hat{\beta}_2$.
+The plot of $log(\hat{\beta_1}*\hat{\beta_2})$ shows an obvious left skewing, with the range `r round(range(pull(boot_straps, log_b1b2)), 3)`, and most of the values were around -5.5. We noticed that there are na in the value of $log(\hat{\beta_1}*\hat{\beta_2})$ due to the negative result of the product of $\hat{\beta_1}$ and $\hat{\beta_2}$.
 
+## 95% confidence interval
 ```{r}
+# calculate 95% CI for two quantities
 ci_rsquared <- quantile(pull(boot_straps, r_squared), c(0.025, 0.975))
 ci_logb1b2 <- quantile(pull(boot_straps, log_b1b2), c(0.025, 0.975), na.rm = TRUE)
 
@@ -160,8 +171,10 @@ ci_logb1b2
 The 95% CI for $\hat{r}^2$ is (0.89, 0.94), and 95% CI for $log(\hat{\beta}_1*\hat{\beta}_2)$ is [-9.06, -4.54]
 
 # Problem 3
+## Data cleaning
 Firstly, we load and clean the data. All variables are converted to appropriate type and there is no missing value through checking.
 ```{r}
+# import and clean data
 birthweight = read_csv("./birthweight.csv") |>
   mutate(
     babysex = case_match(babysex,
@@ -187,12 +200,15 @@ birthweight = read_csv("./birthweight.csv") |>
       4 ~ "Puerto Rican",
       8 ~ "Other"))
 ```
+Then use skim method to check the dataframe
 ```{r}
 skimr::skim(birthweight)
 ```
 
+## Model development
 Firstly, we supposed that the birthweight is associated with babay's health status and characteristics (babysex, bhead, blength, gaweeks, malform), mom's health status and characteristics (delwt, momage, ppmbi, smoken, wtgain), financial status (fincome)
 ```{r}
+# initial development of our model
 model_one = lm(bwt ~ babysex + bhead + blength + gaweeks + delwt + malform + momage + ppbmi + smoken + wtgain, data = birthweight)
 
 model_one |>summary()
@@ -200,16 +216,19 @@ model_one |>summary()
 After fitting the first model, we observed that malform and wtgain is not statistical significant for the model, so we delete these two variables and fit a new model.
 
 ```{r}
+# Develop model with new factors
 model_two = lm(bwt ~ babysex + bhead + blength + gaweeks + delwt + momage + ppbmi + smoken, data = birthweight)
 
 model_two |>summary()
 ```
 Now, all variables are significantly associated with birthweight and we use this as our final model.
+
+## Residuals and predictions
 ```{r}
+# add resiquals and predictions, and plot
 birthweight |>
   add_residuals(model_two) |>
   add_predictions(model_two) |>
-  arrange(pred) |>
   ggplot(
     aes(x = pred ,y = resid)
   )+
@@ -219,23 +238,26 @@ birthweight |>
 
 The plot shows that the fitted values show slightly unstable predictions when the birthweight is too small. Most residuals shows random pattern around 0.
 
+## Model comparison
 Now we use cross validation to evluate our model and other two models.
 ```{r}
-cv_df = crossv_mc(birthweight, 10) |>
-  mutate(
+# Implement cross validation
+cv_df = crossv_mc(birthweight, 10) |> # use cross validation with 10 folds
+  mutate( # split train and test sets
     train = map(train, as_tibble),
     test = map(test, as_tibble))|>
-  mutate(
+  mutate( # fit three models
     our_model =  map(train, \(df) lm(bwt ~ babysex + bhead + blength + gaweeks + delwt + momage + ppbmi + smoken, data = birthweight)),
     sample_model_one = map(train, \(df) lm(bwt ~ blength + gaweeks, data = birthweight)),
     sample_model_two = map(train, \(df) lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data = birthweight))) |>
-  mutate(
+  mutate( # calculate rmse for each model
     rmse_our_model = map2_dbl(our_model, test, \(mod, df) rmse(model = mod, data = df)),
     rmse_sample_model_one = map2_dbl(sample_model_one, test, \(mod, df) rmse(model = mod, data = df)),
     rmse_sample_model_two = map2_dbl(sample_model_two, test, \(mod, df) rmse(model = mod, data = df)))
 ```
 
 ```{r}
+# draw the plot to compare rmse
 cv_df |> 
   select(starts_with("rmse")) |> 
   pivot_longer(
@@ -247,4 +269,5 @@ cv_df |>
   ggplot(aes(x = model, y = rmse)) + geom_violin() +
   stat_summary(fun = "mean", color = "black")
 ```
+
 From the plot, it is obvious that in general, our model shows lower rmse than two sample models, and our model also shows the lowest mean of rmse.
